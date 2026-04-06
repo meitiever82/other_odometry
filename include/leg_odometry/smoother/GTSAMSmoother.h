@@ -18,7 +18,7 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/inference/Symbol.h>
 
-#include "leg_factors.h"
+#include "leg_odometry/smoother/leg_factors.h"
 
 namespace leg_odom {
 

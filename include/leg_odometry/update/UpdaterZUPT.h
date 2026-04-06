@@ -8,8 +8,8 @@
  *   → v ≈ -(ω_w × (R·FK) + R·dFK/dt)
  */
 
-#include "../state/State.h"
-#include "../state/StateHelper.h"
+#include "leg_odometry/state/State.h"
+#include "leg_odometry/state/StateHelper.h"
 
 namespace leg_odom {
 

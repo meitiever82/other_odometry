@@ -49,7 +49,7 @@ ESKF + GTSAM Hybrid 腿式里程计，用于 CASBot02 人形机器人。
 ## 编译
 
 ```bash
-cd hybrid_cpp && mkdir build && cd build
+mkdir build && cd build
 source /opt/ros/humble/setup.bash
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
@@ -87,15 +87,15 @@ python3 scripts/bag_to_csv.py --scenario all
 ## 代码结构
 
 ```
-├── hybrid_cpp/                    # ★ C++ 主代码
+├── src/                           # ★ C++ 主代码
 │   ├── state/
 │   │   ├── State.h                # 21 维 ESKF 状态定义
 │   │   ├── Propagator.h           # IMU 递推
 │   │   ├── StateHelper.h          # Kalman 更新
-│   │   └── Kinematics.h           # KDL FK + 接触检测
+│   │   └── Kinematics.h           # KDL FK + Jacobian + 接触检测
 │   ├── update/
 │   │   ├── UpdaterFK.h            # FK 位置观测
-│   │   ├── UpdaterZUPT.h          # ZUPT + 步级速度 + 静止检测
+│   │   ├── UpdaterZUPT.h          # ZUPT(分轴) + 步级速度 + 静止检测
 │   │   └── UpdaterFlatZ.h         # 平面 Z 约束
 │   ├── smoother/
 │   │   ├── leg_factors.h          # GTSAM 自定义因子 (FK/FlatZ)
@@ -104,7 +104,7 @@ python3 scripts/bag_to_csv.py --scenario all
 │   ├── leg_odom_node.cpp          # ROS2 实时节点
 │   └── CMakeLists.txt
 │
-├── leg_odometry/                  # Python 参考实现 + 评估依赖
+├── python/                        # Python 参考实现 (import via leg_odometry symlink)
 ├── scripts/                       # 仿真生成 / 评估 / 数据转换
 ├── config/                        # 参数配置 (YAML)
 ├── doc/                           # 文档

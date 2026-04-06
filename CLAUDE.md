@@ -4,10 +4,10 @@
 C++ ESKF 200Hz 前端 + GTSAM LM 滑窗后端 (gyro bias 校正)
 
 ## 代码
-- **hybrid_cpp/** — C++ 主代码 (State/Propagator/Updaters/Smoother)
+- **src/** — C++ 主代码 (State/Propagator/Updaters/Smoother)
   - `leg_odom_node.cpp` — ROS2 实时节点
   - `leg_odom_hybrid.cpp` — 离线评估 (CSV)
-- **leg_odometry/** — Python 参考实现 (ekf.py, smoother.py)
+- **python/** — Python 参考实现 (ekf.py, smoother.py, symlink: leg_odometry -> python)
 - **scripts/** — 仿真生成、评估、数据转换
 - **config/ekf_params.yaml** — 所有噪声参数
 

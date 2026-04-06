@@ -15,12 +15,12 @@
 #include <string>
 #include <vector>
 
-#include "state/State.h"
-#include "state/Propagator.h"
-#include "update/UpdaterFK.h"
-#include "update/UpdaterZUPT.h"
-#include "update/UpdaterFlatZ.h"
-#include "smoother/GTSAMSmoother.h"
+#include "leg_odometry/state/State.h"
+#include "leg_odometry/state/Propagator.h"
+#include "leg_odometry/update/UpdaterFK.h"
+#include "leg_odometry/update/UpdaterZUPT.h"
+#include "leg_odometry/update/UpdaterFlatZ.h"
+#include "leg_odometry/smoother/GTSAMSmoother.h"
 
 using namespace leg_odom;
 

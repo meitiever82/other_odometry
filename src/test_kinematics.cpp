@@ -8,7 +8,7 @@
 #include <sstream>
 #include <map>
 
-#include "state/Kinematics.h"
+#include "leg_odometry/state/Kinematics.h"
 
 int main() {
   leg_odom::LegKinematics kin;

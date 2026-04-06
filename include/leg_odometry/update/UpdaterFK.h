@@ -4,8 +4,8 @@
  * @brief FK position observation: p + R * FK(q) = p_foot
  */
 
-#include "../state/State.h"
-#include "../state/StateHelper.h"
+#include "leg_odometry/state/State.h"
+#include "leg_odometry/state/StateHelper.h"
 
 namespace leg_odom {
 
