@@ -7,7 +7,7 @@ ekf:
   # IMU 噪声参数
   accel_noise: 0.1            # m/s^2
   gyro_noise: 0.01            # rad/s
-  accel_bias_walk: 0.0        # m/s^2/sqrt(s) (暂保持锁定，需要更仔细的调参)
+  accel_bias_walk: 0.0
   gyro_bias_walk: 0.001       # rad/s/sqrt(s)
 
   # 足端位置过程噪声
@@ -15,10 +15,13 @@ ekf:
   foot_swing_noise: 1.0       # m/sqrt(s)  腾空时
 
   # FK 观测噪声
-  fk_position_noise: 0.005    # m
+  fk_position_noise: 0.005
 
   # ZUPT 速度约束噪声 (接触脚世界速度 ≈ 0)
-  zupt_noise: 0.03            # m/s
+  zupt_noise: 0.03
+
+  # 速度 bias 随机游走 (Leg-KILO style)
+  vel_bias_walk: 0.001
 
   # 平面运动约束 (机器人在平地行走, Z 方向几乎不动)
   flat_vz_noise: 0.01         # m/s, Z 速度 ≈ 0

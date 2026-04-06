@@ -51,7 +51,7 @@ class BloeSchEKF:
     BG = slice(12, 15)  # gyro bias
     FL = slice(15, 18)  # left foot position
     FR = slice(18, 21)  # right foot position
-    DIM = 21            # error-state 维度 (theta 用 3 维)
+    DIM = 21            # error-state 维度
 
     def __init__(self, params: dict):
         self.g = np.array(params.get('gravity', [0, 0, -9.81]))
@@ -88,6 +88,26 @@ class BloeSchEKF:
         self._prev_fk_right = None
         self._last_gyro = np.zeros(3)
         self._last_dt = 0.005
+
+        # 静止检测
+        self._gyro_buffer = []
+        self._STILLNESS_WINDOW = 50   # 50 帧 = 0.25s
+        self._STILLNESS_THRESHOLD = 0.005  # rad/s, gyro std 阈值
+        self.is_still = False
+
+        # 步级速度估计: 记录每个支撑相开始时的 FK
+        self._stance_start_fk_left = None
+        self._stance_start_fk_right = None
+        self._stance_start_time_left = 0.0
+        self._stance_start_time_right = 0.0
+        self._prev_contact_left = False
+        self._prev_contact_right = False
+
+        # 多步 Heading: 落脚点序列 → yaw 约束
+        self._footstep_positions = []  # [(x, y), ...] 世界系落脚 XY
+        self._MAX_FOOTSTEPS = 6        # 保留最近 N 步
+        self._MIN_FOOTSTEPS = 3        # 至少 N 步才约束
+        self._sigma_heading = 0.05     # rad, heading 观测噪声
 
         # 协方差
         self.P_cov = np.eye(self.DIM) * 0.01
@@ -176,6 +196,16 @@ class BloeSchEKF:
         self._last_gyro = w.copy()
         self._last_dt = dt
 
+        # 静止检测
+        self._gyro_buffer.append(np.linalg.norm(w))
+        if len(self._gyro_buffer) > self._STILLNESS_WINDOW:
+            self._gyro_buffer.pop(0)
+        if len(self._gyro_buffer) >= self._STILLNESS_WINDOW:
+            self.is_still = (np.std(self._gyro_buffer) < self._STILLNESS_THRESHOLD
+                             and np.linalg.norm(self.v[:2]) < 0.05)
+        else:
+            self.is_still = False
+
         # 名义状态更新
         a_world = self.R @ a + self.g
         self.p = self.p + self.v * dt + 0.5 * a_world * dt**2
@@ -257,6 +287,30 @@ class BloeSchEKF:
             self._zupt_update(p_fl_body, self._prev_fk_left, R_zupt)
         self._prev_fk_left = p_fl_body.copy()
 
+        # 左脚步级速度: 支撑相开始/结束时记录 FK
+        if contact_left and not self._prev_contact_left:
+            # 着地瞬间: 记录 FK + body 位置
+            self._stance_start_fk_left = p_fl_body.copy()
+            self._stance_start_pos_left = self.p.copy()
+            self._stance_frames_left = 0
+        if contact_left:
+            self._stance_frames_left = getattr(self, '_stance_frames_left', 0) + 1
+        if not contact_left and self._prev_contact_left and self._stance_start_fk_left is not None:
+            # 抬脚瞬间: 足端预积分 — 用整个支撑相 FK 位移约束速度+位置
+            stance_dt = self._stance_frames_left * self._last_dt
+            if stance_dt > 0.05:
+                dfk = p_fl_body - self._stance_start_fk_left
+                dp_expected = -(self.R @ dfk)  # body 位移 = -R·ΔFK
+
+                # 1. 速度约束: v ≈ dp_expected / dt
+                v_step = dp_expected / stance_dt
+                sigma_v = self.sigma_zupt * 2.0
+                H_v = np.zeros((3, self.DIM))
+                H_v[:, self.V] = np.eye(3)
+                self._kalman_update(v_step - self.v, H_v, np.eye(3) * sigma_v**2)
+
+        self._prev_contact_left = contact_left
+
         # === 右脚 FK 位置观测（始终更新）===
         r_fr_world = self.R @ p_fr_body
         z_fr = self.p + r_fr_world
@@ -272,6 +326,51 @@ class BloeSchEKF:
         if contact_right and self._prev_fk_right is not None:
             self._zupt_update(p_fr_body, self._prev_fk_right, R_zupt)
         self._prev_fk_right = p_fr_body.copy()
+
+        # 右脚足端预积分
+        if contact_right and not self._prev_contact_right:
+            self._stance_start_fk_right = p_fr_body.copy()
+            self._stance_start_pos_right = self.p.copy()
+            self._stance_frames_right = 0
+        if contact_right:
+            self._stance_frames_right = getattr(self, '_stance_frames_right', 0) + 1
+        if not contact_right and self._prev_contact_right and self._stance_start_fk_right is not None:
+            stance_dt = self._stance_frames_right * self._last_dt
+            if stance_dt > 0.05:
+                dfk = p_fr_body - self._stance_start_fk_right
+                dp_expected = -(self.R @ dfk)
+
+                v_step = dp_expected / stance_dt
+                sigma_v = self.sigma_zupt * 2.0
+                H_v = np.zeros((3, self.DIM))
+                H_v[:, self.V] = np.eye(3)
+                self._kalman_update(v_step - self.v, H_v, np.eye(3) * sigma_v**2)
+
+        self._prev_contact_right = contact_right
+
+        # （多步 Heading 约束已移除：从漂移位置计算 heading 是循环依赖，反而有害）
+
+        # === 双脚支撑约束 ===
+        if contact_left and contact_right:
+            # 1. vz 约束更紧
+            sigma_ds = self.sigma_zupt * 0.5
+            H_vz = np.zeros((1, self.DIM))
+            H_vz[0, self.V.start + 2] = 1.0
+            self._kalman_update(
+                np.array([-self.v[2]]),
+                H_vz,
+                np.array([[sigma_ds**2]]))
+
+
+        if self.is_still:
+            # 静止: 全速度 ≈ 0（非常强的约束）
+            sigma_still = 0.005  # m/s
+            H_still = np.zeros((3, self.DIM))
+            H_still[:, self.V] = np.eye(3)
+            self._kalman_update(
+                -self.v,
+                H_still,
+                np.eye(3) * sigma_still**2)
 
         # === 平面运动约束: Z 速度 ≈ 0, Z 位置 ≈ 0 ===
         if self.sigma_flat_vz > 0:
@@ -379,3 +478,19 @@ class BloeSchEKF:
     def get_velocity(self) -> np.ndarray:
         """返回当前速度估计 (世界系)。"""
         return self.v.copy()
+
+    def set_bias(self, b_a: np.ndarray, b_g: np.ndarray, alpha: float = 0.3):
+        """外部注入 bias 估计（从滑窗平滑器）。
+
+        用指数移动平均渐进式融合，避免突变冲击。
+        alpha: 融合权重 (0=不更新, 1=完全替换)
+        """
+        self.b_a = (1 - alpha) * self.b_a + alpha * b_a
+        self.b_g = (1 - alpha) * self.b_g + alpha * b_g
+
+    def get_state_for_smoother(self):
+        """导出当前状态供滑窗平滑器使用。"""
+        import gtsam
+        pose = gtsam.Pose3(gtsam.Rot3(self.R), gtsam.Point3(*self.p))
+        bias = gtsam.imuBias.ConstantBias(self.b_a, self.b_g)
+        return pose, self.v.copy(), bias

@@ -333,16 +333,13 @@ def _stop_and_go(speed=0.5, walk_time=5.0, stop_time=2.0, cycles=5):
 
     def traj(t):
         cycle_t = t % (walk_time + stop_time)
-        # 计算走过的总距离
         full_cycles = int(t / (walk_time + stop_time))
         dist = full_cycles * speed * walk_time
         if cycle_t < walk_time:
             dist += speed * cycle_t
         else:
             dist += speed * walk_time
-
-        x = dist
-        return x, 0.0, LEG.standing_height, 0.0, 0.0, 0.0
+        return dist, 0.0, LEG.standing_height, 0.0, 0.0, 0.0
 
     return gait, traj, duration
 
