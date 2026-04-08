@@ -73,6 +73,9 @@ install(PROGRAMS
   scripts/evaluate_sim.py
   scripts/evaluate_hybrid.py
   scripts/bag_to_csv.py
+  scripts/dump_leg_odom_csv.py
+  scripts/eval_drift.py
+  scripts/run_bag_test.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 
