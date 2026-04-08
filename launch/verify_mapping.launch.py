@@ -23,20 +23,17 @@ def _find_pkg_dir():
 
 
 def _find_urdf():
-    """找到 URDF 文件。"""
-    # 硬编码源码路径 + 相对路径备选
-    candidates = [
-        '/home/steve/casbot_ws/src/finder_lidar_mapping/glim_ros2/urdf/casbot02_7dof_shell.urdf',
-    ]
-    # 也从 launch 文件位置相对查找
+    """从 launch 文件位置相对查找 URDF。"""
     pkg_dir = _find_pkg_dir()
-    for rel in [
-        os.path.join(pkg_dir, '..', '..', '..', '..', 'glim_ros2', 'urdf', 'casbot02_7dof_shell.urdf'),
-        os.path.join(pkg_dir, '..', 'finder_lidar_mapping', 'glim_ros2', 'urdf', 'casbot02_7dof_shell.urdf'),
-    ]:
-        candidates.append(os.path.abspath(rel))
-
+    candidates = [
+        # casbot_ws/urdf/
+        os.path.join(pkg_dir, '..', '..', 'urdf', 'casbot02_7dof_shell.urdf'),
+        # finder_lidar_mapping 包内
+        os.path.join(pkg_dir, '..', 'finder_lidar_mapping', 'glim_ros2',
+                     'urdf', 'casbot02_7dof_shell.urdf'),
+    ]
     for p in candidates:
+        p = os.path.abspath(p)
         if os.path.exists(p):
             return p
     raise FileNotFoundError(f'URDF not found, tried: {candidates}')
@@ -45,9 +42,6 @@ def _find_urdf():
 def generate_launch_description():
     pkg_dir = _find_pkg_dir()
     config_path = os.path.join(pkg_dir, 'config', 'joint_mapping.yaml')
-    if not os.path.exists(config_path):
-        # symlink-install 时，config 在源码目录
-        config_path = '/home/steve/casbot_ws/src/leg_odometry/config/joint_mapping.yaml'
     urdf_path = _find_urdf()
 
     # 读取 URDF 并修复 mesh 路径

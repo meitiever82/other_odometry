@@ -10,9 +10,10 @@
 
 #include "leg_odometry/state/Kinematics.h"
 
-int main() {
+int main(int argc, char** argv) {
   leg_odom::LegKinematics kin;
-  std::string urdf = "/home/steve/casbot_ws/src/finder_lidar_mapping/glim_ros2/urdf/casbot02_7dof_shell.urdf";
+  // 默认走 cwd 相对路径（从 casbot_ws 根目录跑），可用 argv[1] 覆盖
+  std::string urdf = (argc > 1) ? argv[1] : "urdf/casbot02_7dof_shell.urdf";
 
   if (!kin.init(urdf)) {
     std::cerr << "Failed to load URDF" << std::endl;
@@ -39,8 +40,8 @@ int main() {
   std::cout << "FK right at zero: " << fr.transpose() << std::endl;
   std::cout << "(Python: [-0.0228  0.1425 -0.8215])" << std::endl;
 
-  // Verify against CSV first line
-  std::ifstream f("/home/steve/casbot_ws/data/sim/csv/straight_medium.csv");
+  // Verify against CSV first line（同样走 cwd 相对路径）
+  std::ifstream f("data/sim/csv/straight_medium.csv");
   std::string header, line;
   std::getline(f, header);
   std::getline(f, line);
