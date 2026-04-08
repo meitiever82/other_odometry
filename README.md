@@ -61,9 +61,6 @@ make -j$(nproc)
 
 ### ROS2 实时节点
 
-```bash
-export LD_LIBRARY_PATH=$HOME/Documents/local/gtsam-4.3/lib:$LD_LIBRARY_PATH
-
 ./build/leg_odom_node --ros-args \
   -p urdf_path:=<path/to/casbot02.urdf>
 ```

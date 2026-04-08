@@ -22,7 +22,7 @@ C++ ESKF 200Hz 前端 + GTSAM LM 滑窗后端 (gyro bias 校正)
 - ESKF+GTSAM Hybrid 是最优
 
 ## 依赖
-GTSAM 4.3 (~/Documents/local/gtsam-4.3/), KDL, ROS2 Humble
+GTSAM 4.3, KDL, ROS2
 
 ## 用户
 Steve，中文沟通，务实风格
