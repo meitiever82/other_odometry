@@ -44,6 +44,10 @@ contact:
   hysteresis: 1.0             # Nm, 滞后量 (上阈值=threshold+hyst, 下阈值=threshold-hyst)
   effort_joint_left: LJPITCH  # 左脚接触检测用的关节
   effort_joint_right: RJPITCH # 右脚接触检测用的关节
+  # blackout 保护: |eff_l|=|eff_r|=0 持续 N 秒后强制双脚 contact 让 ZUPT 兜底,
+  # 防止 effort 信号失效时 ESKF 速度自由积分跑飞 (=0 关掉这个保护)。
+  # 真实数据 (rosbag2_2026_04_07-16_12_13 后半段) 已观察到 effort 整段为 0 的情况。
+  blackout_threshold: 0.5     # s
 
 smoother:
   # GTSAM 后端 bias_walk (与前端 ekf.{accel,gyro}_bias_walk 不同)
