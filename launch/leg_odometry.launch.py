@@ -3,49 +3,98 @@
 
 用法:
   ros2 launch leg_odometry leg_odometry.launch.py
+  ros2 launch leg_odometry leg_odometry.launch.py urdf_path:=/abs/foo.urdf
+  ros2 launch leg_odometry leg_odometry.launch.py params_file:=/abs/bar.yaml
   # 另一终端:
   ros2 bag play <bag_path> --clock -r 1.0
+
+参数加载: 默认从 leg_odometry/config/ekf_params.yaml 读，
+也可以用 params_file:= 临时换一组参数。yaml 是唯一真实源，
+launch 不再硬编码任何噪声值。
 """
 
 import os
+import yaml
+
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
+DEFAULT_URDF = os.environ.get(
+    'CASBOT_URDF',
+    os.path.expanduser('~/casbot_ws/urdf/casbot02_7dof_shell.urdf'),
+)
 
-def _find_pkg_dir():
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(this_dir)
+# 把 ekf_params.yaml 里的 key 映射到 leg_odom_node 的 ROS 参数名。
+# 只在 yaml 里出现且 C++ 节点确实 declare_parameter 过的才会被传过去；
+# 缺失的 key 由 C++ 那边的 declare_parameter 默认值兜底。
+_EKF_KEYS = (
+    'accel_noise', 'gyro_noise',
+    'accel_bias_walk', 'gyro_bias_walk',
+    'foot_contact_noise', 'foot_swing_noise',
+    'fk_position_noise', 'zupt_noise',
+    'flat_z_noise', 'flat_vz_noise',
+)
 
+def _build_node_params(urdf_path: str, params_file: str) -> dict:
+    """读 yaml 并组装成 leg_odom_node 的参数 dict。"""
+    with open(params_file) as f:
+        cfg = yaml.safe_load(f) or {}
 
-def _find_urdf():
-    pkg_dir = _find_pkg_dir()
-    candidates = [
-        os.path.join(pkg_dir, '..', '..', '..', '..', 'urdf',
-                     'casbot02_7dof_shell.urdf'),
-        os.path.join(pkg_dir, '..', '..', '..', '..', 'glim_ros2', 'urdf',
-                     'casbot02_7dof_shell.urdf'),
-        '/home/steve/casbot_ws/urdf/casbot02_7dof_shell.urdf',
-    ]
-    for p in candidates:
-        p = os.path.abspath(p)
-        if os.path.exists(p):
-            return p
-    raise FileNotFoundError('URDF not found')
+    ekf = cfg.get('ekf', {}) or {}
+    contact = cfg.get('contact', {}) or {}
+    smoother = cfg.get('smoother', {}) or {}
 
+    params: dict = {'urdf_path': urdf_path}
+    for k in _EKF_KEYS:
+        if k in ekf:
+            params[k] = ekf[k]
 
-def generate_launch_description():
-    urdf_path = _find_urdf()
+    if 'effort_threshold' in contact:
+        params['effort_threshold'] = contact['effort_threshold']
+    if 'hysteresis' in contact:
+        params['effort_hysteresis'] = contact['hysteresis']  # yaml→C++ 改名
+    if 'effort_joint_left' in contact:
+        params['effort_joint_left'] = contact['effort_joint_left']
+    if 'effort_joint_right' in contact:
+        params['effort_joint_right'] = contact['effort_joint_right']
 
+    # smoother 后端 bias_walk (与前端 ekf.{accel,gyro}_bias_walk 不同)
+    if 'accel_bias_walk' in smoother:
+        params['smoother_accel_bias_walk'] = smoother['accel_bias_walk']
+    if 'gyro_bias_walk' in smoother:
+        params['smoother_gyro_bias_walk'] = smoother['gyro_bias_walk']
+    return params
+
+def _spawn(context, *args, **kwargs):
+    urdf_path = LaunchConfiguration('urdf_path').perform(context)
+    params_file = LaunchConfiguration('params_file').perform(context)
+
+    if not os.path.exists(urdf_path):
+        raise FileNotFoundError(
+            f'URDF not found: {urdf_path}\n'
+            f'  use launch arg urdf_path:=... or env CASBOT_URDF=...'
+        )
+    if not os.path.exists(params_file):
+        raise FileNotFoundError(f'params_file not found: {params_file}')
+
+    # robot_state_publisher 需要把 URDF 内容作为字符串传入，
+    # 这里顺手把 mesh 路径修正成绝对 file:// 路径。
     with open(urdf_path) as f:
         urdf_content = f.read()
     meshes_dir = os.path.abspath(
-        os.path.join(os.path.dirname(urdf_path), '..', 'meshes'))
+        os.path.join(os.path.dirname(urdf_path), '..', 'meshes')
+    )
     urdf_content = urdf_content.replace(
         'filename="../meshes/',
-        f'filename="file://{meshes_dir}/')
+        f'filename="file://{meshes_dir}/',
+    )
 
-    return LaunchDescription([
-        # Robot state publisher (for RViz visualization, optional)
+    node_params = _build_node_params(urdf_path, params_file)
+
+    return [
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',
@@ -53,38 +102,29 @@ def generate_launch_description():
             output='screen',
             parameters=[{'robot_description': urdf_content}],
         ),
-
-        # C++ leg odometry node (ESKF + GTSAM hybrid)
         Node(
             package='leg_odometry',
             executable='leg_odom_node',
             name='leg_odom_node',
             output='screen',
-            parameters=[{
-                'urdf_path': urdf_path,
-                # ESKF noise (defaults from progress_report.md "最优参数配置")
-                'accel_noise': 0.1,
-                'gyro_noise': 0.01,
-                'accel_bias_walk': 0.0,
-                'gyro_bias_walk': 0.001,
-                'foot_contact_noise': 0.002,
-                'foot_swing_noise': 1.0,
-                'fk_position_noise': 0.005,
-                'zupt_noise': 0.03,
-                'flat_z_noise': 0.001,
-                'flat_vz_noise': 0.001,
-                # Contact detection
-                'effort_threshold': 5.0,
-                'effort_hysteresis': 1.0,
-                'effort_joint_left': 'LJPITCH',
-                'effort_joint_right': 'RJPITCH',
-                # Init / smoother
-                'init_frames': 50,
-                'smoother_enabled': True,
-                'smoother_window': 60,
-                'smoother_interval': 20,
-                'smoother_kf_interval': 10,
-                'smoother_alpha': 0.05,
-            }],
+            parameters=[node_params],
         ),
+    ]
+
+def generate_launch_description():
+    pkg = FindPackageShare('leg_odometry')
+    default_params = PathJoinSubstitution([pkg, 'config', 'ekf_params.yaml'])
+
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'urdf_path',
+            default_value=DEFAULT_URDF,
+            description='Absolute path to the robot URDF',
+        ),
+        DeclareLaunchArgument(
+            'params_file',
+            default_value=default_params,
+            description='Absolute path to ekf_params.yaml (single source of truth)',
+        ),
+        OpaqueFunction(function=_spawn),
     ])

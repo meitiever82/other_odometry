@@ -24,8 +24,11 @@ ekf:
   vel_bias_walk: 0.001
 
   # 平面运动约束 (机器人在平地行走, Z 方向几乎不动)
-  flat_vz_noise: 0.01         # m/s, Z 速度 ≈ 0
-  flat_z_noise: 0.01          # m, Z 位置 ≈ 初始高度
+  # σ=0.001 把 Z 钉在 ±2mm，物理上不诚实但避免 IMU 在 Z 上漂移；
+  # office/平地场景下 Z 不重要，drift 才是大头。
+  # 上下坡/楼梯场景需要放大到 0.005 或 0.01。
+  flat_vz_noise: 0.001        # m/s, Z 速度 ≈ 0
+  flat_z_noise: 0.001         # m, Z 位置 ≈ 初始高度
 
   # 初始协方差
   init_pos_std: 0.01          # m
@@ -41,6 +44,13 @@ contact:
   hysteresis: 1.0             # Nm, 滞后量 (上阈值=threshold+hyst, 下阈值=threshold-hyst)
   effort_joint_left: LJPITCH  # 左脚接触检测用的关节
   effort_joint_right: RJPITCH # 右脚接触检测用的关节
+
+smoother:
+  # GTSAM 后端 bias_walk (与前端 ekf.{accel,gyro}_bias_walk 不同)
+  # 前端通常把 accel bias 锁住 (0)，因为前端无法观测它；
+  # 后端看多个 keyframe，可以让 bias 慢慢 walk 然后被 IMU factor 校正回来。
+  accel_bias_walk: 0.005      # m/s^2/sqrt(s)
+  gyro_bias_walk:  0.002      # rad/s/sqrt(s)
 
 kinematics:
   # URDF 路径
