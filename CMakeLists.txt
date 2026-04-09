@@ -65,7 +65,7 @@ install(TARGETS leg_odom_node test_leg_odom test_kinematics
 install(DIRECTORY include/
   DESTINATION include
 )
-install(DIRECTORY config launch
+install(DIRECTORY config launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
 install(PROGRAMS
@@ -76,7 +76,14 @@ install(PROGRAMS
   scripts/dump_leg_odom_csv.py
   scripts/eval_drift.py
   scripts/run_bag_test.sh
+  scripts/diag_sim2real.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Renamed install: launch uses executable='joint_state_remapper' (no .py)
+install(PROGRAMS scripts/joint_state_remapper.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME joint_state_remapper
 )
 
 ament_package()
