@@ -4,3 +4,4 @@ __pycache__/
 /data
 /doc/report_*
 /doc/progress_report*
+data/*
