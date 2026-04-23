@@ -1,0 +1,36 @@
+# FK-only leg odometry parameters (Stage 1-4 + foot rolling).
+
+fk_only_odom:
+  ros__parameters:
+    urdf_path: ""
+
+    # 接触检测（effort 阈值 + 滞后）
+    effort_threshold_left:  5.0
+    effort_threshold_right: 5.0
+    effort_hysteresis:      1.0
+
+    # gyro bias 估计：前 bias_window_sec 秒 IMU 静止段均值作为 bg
+    bias_window_sec: 3.0
+
+    # Stage 3 Mahony accel-tilt（只修 roll/pitch，不碰 yaw）
+    tilt_kp:             1.0
+    tilt_accel_band:     0.5
+    tilt_require_stance: true
+
+    # Stage 4 FlatZ：stance 时把 p.z 低通拉回 0
+    flatz_enabled: true
+    flatz_alpha:   0.05
+
+    # Heel-toe rolling 补偿：v_foot_body.x += sign · toe_offset · q̇_ankle_pitch
+    # 按场景手动配：
+    #   - 向前走（走环、走直线）: 0.20 m
+    #   - 原地转圈:                0.0（避免过补偿）
+    #   - 未知场景:                0.0 保底
+    foot_roll_toe_offset: 0.0
+    foot_roll_sign:       1.0
+
+    # ROS 输出
+    publish_tf: true
+    odom_frame: "odom"
+    base_frame: "base_link_leg_odom"
+    odom_topic: "/leg_odometry"

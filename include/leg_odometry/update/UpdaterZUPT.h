@@ -71,7 +71,7 @@ class UpdaterZUPT {
   static Eigen::Vector3d compute_v_expected(const State& s,
                                              const Eigen::Vector3d& fk_now,
                                              const Eigen::Vector3d& fk_prev) {
-    double dt_fk = 0.005;  // FK sample interval
+    double dt_fk = (s.last_dt > 1e-4) ? s.last_dt : 0.005;
     Eigen::Vector3d R_dfk = s.R * ((fk_now - fk_prev) / dt_fk);
     Eigen::Vector3d r_world = s.R * fk_now;
     Eigen::Vector3d omega_world = s.R * s.last_gyro_corrected;

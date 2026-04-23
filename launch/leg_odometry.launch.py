@@ -54,12 +54,18 @@ def _build_node_params(urdf_path: str, params_file: str) -> dict:
 
     if 'effort_threshold' in contact:
         params['effort_threshold'] = contact['effort_threshold']
+    if 'effort_threshold_left' in contact:
+        params['effort_threshold_left'] = contact['effort_threshold_left']
+    if 'effort_threshold_right' in contact:
+        params['effort_threshold_right'] = contact['effort_threshold_right']
     if 'hysteresis' in contact:
         params['effort_hysteresis'] = contact['hysteresis']  # yaml→C++ 改名
     if 'effort_joint_left' in contact:
         params['effort_joint_left'] = contact['effort_joint_left']
     if 'effort_joint_right' in contact:
         params['effort_joint_right'] = contact['effort_joint_right']
+    if 'blackout_threshold' in contact:
+        params['blackout_threshold'] = contact['blackout_threshold']
 
     # smoother 后端 bias_walk (与前端 ekf.{accel,gyro}_bias_walk 不同)
     if 'accel_bias_walk' in smoother:
@@ -71,6 +77,7 @@ def _build_node_params(urdf_path: str, params_file: str) -> dict:
 def _spawn(context, *args, **kwargs):
     urdf_path = LaunchConfiguration('urdf_path').perform(context)
     params_file = LaunchConfiguration('params_file').perform(context)
+    smoother_enabled = LaunchConfiguration('smoother_enabled').perform(context).lower() in ('true', '1', 'yes')
 
     if not os.path.exists(urdf_path):
         raise FileNotFoundError(
@@ -93,6 +100,7 @@ def _spawn(context, *args, **kwargs):
     )
 
     node_params = _build_node_params(urdf_path, params_file)
+    node_params['smoother_enabled'] = smoother_enabled
 
     return [
         Node(
@@ -125,6 +133,11 @@ def generate_launch_description():
             'params_file',
             default_value=default_params,
             description='Absolute path to ekf_params.yaml (single source of truth)',
+        ),
+        DeclareLaunchArgument(
+            'smoother_enabled',
+            default_value='true',
+            description='Enable GTSAM smoother bg feedback',
         ),
         OpaqueFunction(function=_spawn),
     ])

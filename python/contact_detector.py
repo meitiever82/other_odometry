@@ -1,5 +1,7 @@
 """接触检测：踝关节力矩阈值法 + 滞后。"""
 
+from collections import deque
+
 import numpy as np
 
 
@@ -58,6 +60,67 @@ class ContactDetector:
                 result = True
 
         return result
+
+    @property
+    def left_contact(self) -> bool:
+        return self._contact_left
+
+    @property
+    def right_contact(self) -> bool:
+        return self._contact_right
+
+
+class BiasCompensatedContactDetector:
+    """偏置补偿的接触检测：|effort - rolling_median(effort)| > threshold。
+
+    背景用因果滑动中位数估计（窗口 N 帧），真实 bag 上姿态相关的
+    静态力矩 bias 随步态姿态漂移，单一固定阈值会把真实 stance 的
+    尖峰切掉或漏判；减去背景后双侧可用统一阈值。
+    """
+
+    def __init__(self, threshold: float = 5.0, hysteresis: float = 1.0,
+                 window_size: int = 1000):
+        """
+        Args:
+            threshold: detrended |effort| 的阈值 (Nm)
+            hysteresis: 滞后带宽 (Nm)
+            window_size: rolling median 窗长 (帧). 200Hz → 1000 = 5s
+        """
+        self.threshold = threshold
+        self.hysteresis = hysteresis
+        self.window_size = window_size
+        self._buf_l = deque(maxlen=window_size)
+        self._buf_r = deque(maxlen=window_size)
+        self._contact_left = False
+        self._contact_right = False
+        # 前 warmup 帧数（< window/5）用裸阈值回退，避免刚启动时中位数偏
+        self._warmup = max(50, window_size // 5)
+
+    def update(self, effort_left: float, effort_right: float,
+               fk_z_left: float = None, fk_z_right: float = None):
+        self._buf_l.append(effort_left)
+        self._buf_r.append(effort_right)
+
+        if len(self._buf_l) < self._warmup:
+            bg_l = 0.0
+            bg_r = 0.0
+        else:
+            bg_l = float(np.median(self._buf_l))
+            bg_r = float(np.median(self._buf_r))
+
+        det_l = abs(effort_left - bg_l)
+        det_r = abs(effort_right - bg_r)
+
+        self._contact_left = self._apply(det_l, self._contact_left)
+        self._contact_right = self._apply(det_r, self._contact_right)
+        return self._contact_left, self._contact_right
+
+    def _apply(self, eabs: float, prev: bool) -> bool:
+        if eabs > self.threshold + self.hysteresis:
+            return True
+        if eabs < self.threshold - self.hysteresis:
+            return False
+        return prev
 
     @property
     def left_contact(self) -> bool:

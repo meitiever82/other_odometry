@@ -166,24 +166,25 @@ inline std::map<std::string, std::string> default_joint_mapping() {
 }
 
 // Contact detection (effort threshold with hysteresis)
+// 左右独立阈值：补偿单腿静态 torque bias（如 B1 右腿 +11.5Nm）
 class ContactDetector {
  public:
-  ContactDetector(double threshold = 5.0, double hysteresis = 1.0,
-                  double fk_z_threshold = 0.0)
-      : threshold_(threshold), hysteresis_(hysteresis),
-        fk_z_threshold_(fk_z_threshold) {}
+  ContactDetector(double threshold_left = 5.0, double threshold_right = 5.0,
+                  double hysteresis = 1.0, double fk_z_threshold = 0.0)
+      : threshold_left_(threshold_left), threshold_right_(threshold_right),
+        hysteresis_(hysteresis), fk_z_threshold_(fk_z_threshold) {}
 
   std::pair<bool, bool> update(double effort_left, double effort_right,
                                 double fk_z_left = 1.0, double fk_z_right = 1.0) {
-    contact_left_ = detect(std::abs(effort_left), contact_left_, fk_z_left);
-    contact_right_ = detect(std::abs(effort_right), contact_right_, fk_z_right);
+    contact_left_  = detect(std::abs(effort_left),  contact_left_,  threshold_left_,  fk_z_left);
+    contact_right_ = detect(std::abs(effort_right), contact_right_, threshold_right_, fk_z_right);
     return {contact_left_, contact_right_};
   }
 
  private:
-  bool detect(double effort_abs, bool prev, double fk_z) {
-    double upper = threshold_ + hysteresis_;
-    double lower = threshold_ - hysteresis_;
+  bool detect(double effort_abs, bool prev, double threshold, double fk_z) {
+    double upper = threshold + hysteresis_;
+    double lower = threshold - hysteresis_;
     bool result;
     if (effort_abs > upper) result = true;
     else if (effort_abs < lower) result = false;
@@ -196,7 +197,7 @@ class ContactDetector {
     return result;
   }
 
-  double threshold_, hysteresis_, fk_z_threshold_;
+  double threshold_left_, threshold_right_, hysteresis_, fk_z_threshold_;
   bool contact_left_ = false, contact_right_ = false;
 };
 

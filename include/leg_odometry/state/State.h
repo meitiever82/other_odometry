@@ -114,7 +114,7 @@ struct State {
 
     p.setZero();
     v.setZero();
-    b_a = accel - R.transpose() * Eigen::Vector3d(0, 0, 9.81);
+    b_a.setZero();
     b_g.setZero();
 
     p_fl = p + R * fk_left;

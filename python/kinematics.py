@@ -21,26 +21,34 @@ def _urdf_pose_to_kdl_frame(pose):
 
 
 def _urdf_joint_to_kdl_joint(joint):
-    """将 URDF joint 转为 KDL Joint。"""
+    """将 URDF joint 转为 KDL Joint，匹配 kdl_parser.cpp 的语义。
+
+    kdl_parser::toKdl() 源码：
+      KDL::Frame f_parent_jnt = toKdl(jnt->parent_to_joint_origin_transform);
+      return KDL::Joint(jnt->name, f_parent_jnt.p, f_parent_jnt.M * axis, RotAxis);
+
+    即：joint 的旋转轴心 = URDF origin xyz（旋转绕这一点发生，而不是 segment base
+    的 (0,0,0)）；axis 在 URDF 里是 joint 自身坐标系下的方向，所以要左乘 origin rpy
+    才能转换到 parent 坐标系。过去写成 Vector(0,0,0)+raw axis 会让 f_tip 跟着旋转
+    漂移，FK 非零位时结果错误，和 C++ kdl_parser 不匹配。
+    """
     origin = _urdf_pose_to_kdl_frame(joint.origin)
     axis = joint.axis if joint.axis else [1, 0, 0]
 
     if joint.type == 'fixed':
         return origin, PyKDL.Joint(joint.name, PyKDL.Joint.Fixed)
-    elif joint.type in ('revolute', 'continuous'):
+
+    # Transform axis to parent frame: a_parent = R_origin * a_child
+    axis_v = PyKDL.Vector(*axis)
+    axis_parent = origin.M * axis_v
+    joint_origin = origin.p  # pivot at URDF xyz, in parent frame
+
+    if joint.type in ('revolute', 'continuous'):
         return origin, PyKDL.Joint(
-            joint.name,
-            PyKDL.Vector(0, 0, 0),  # origin
-            PyKDL.Vector(*axis),     # axis
-            PyKDL.Joint.RotAxis,
-        )
+            joint.name, joint_origin, axis_parent, PyKDL.Joint.RotAxis)
     elif joint.type == 'prismatic':
         return origin, PyKDL.Joint(
-            joint.name,
-            PyKDL.Vector(0, 0, 0),  # origin
-            PyKDL.Vector(*axis),     # axis
-            PyKDL.Joint.TransAxis,
-        )
+            joint.name, joint_origin, axis_parent, PyKDL.Joint.TransAxis)
     else:
         return origin, PyKDL.Joint(joint.name, PyKDL.Joint.Fixed)
 

@@ -40,7 +40,11 @@ ekf:
 
 contact:
   # 接触检测参数
-  effort_threshold: 5.0       # Nm, 踝关节力矩阈值
+  effort_threshold: 5.0       # Nm, 向后兼容的共享阈值
+  # 左右独立阈值：补偿单腿静态 torque bias。
+  # B1 右腿 JPITCH 有 +11.5Nm 静态 bias, 故右侧需要更高阈值才能正确区分 stance/swing。
+  effort_threshold_left:  5.0
+  effort_threshold_right: 12.0
   hysteresis: 1.0             # Nm, 滞后量 (上阈值=threshold+hyst, 下阈值=threshold-hyst)
   effort_joint_left: LJPITCH  # 左脚接触检测用的关节
   effort_joint_right: RJPITCH # 右脚接触检测用的关节

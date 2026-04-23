@@ -71,31 +71,16 @@ type: project
 
 按优先级排序：
 
-1. **【最有价值】GTSAMSmoother 没用速度类 factor**
-   - `include/leg_odometry/smoother/GTSAMSmoother.h:106-145` 的 optimize() 只用了 `FKPositionFactor` + 接触 `BetweenFactor` + `FlatZPositionFactor` + `ImuFactor`
-   - 定义在 `leg_factors.h` 的 `FootVelocityFactor` 和 `FlatZVelocityFactor` 没被使用
-   - **假设**：long_walk 42% / curve_walk 49% 漂移大，可能是因为前端 ZUPT 强但后端没保留等价约束，gyro bias 优化时被牵走
-   - **下一步动作**：在 smoother 加 FootVelocityFactor，验证 long_walk 是否能降下来
+1. ~~【最有价值】GTSAMSmoother 没用速度类 factor~~ **【2026-04-15 验证负结果】**
+   - 已接入 `FlatZVelocityFactor`（保留），`FootVelocityFactor` 试过后删除
+   - sim 9 场景回归：Foot+FlatZ 7/9 变差（straight_fast +2.3pp）；仅 FlatZVelocity 均值 -0.07pp 基本中性
+   - 结论：后端缺速度约束不是 drift 主因。`BetweenFactor<Point3>(FLk(i),FLk(j),0)` 已是积分版 ZUPT，再叠加速度级冗余且和 ImuFactor 打架
+   - drift 根源转向前端：gyro bias 漂移 / FK 建模 / contact 误触发
 
-2. **leg_odom_node.cpp init bug**
-   - `src/leg_odom_node.cpp:156-181` 检测到未静止时只 return（line 167），不重置 `init_accel_sum_` / `init_gyro_buf_`
-   - 后果：开机时不静止则初始 R 和 b_a 被污染，且 `init_gyro_buf_` 无限增长
-   - 修法：滑窗 reset，或失败时清空重来
-
-3. **smoother bias_walk 写死，没读 yaml**
-   - `src/leg_odom_node.cpp:107` 和 `src/leg_odom_hybrid.cpp:91-92` 都硬编码 `0.005, 0.002`
-   - 应该走 `declare_parameter`，否则改 yaml 不生效
-
-4. **UpdaterZUPT::compute_v_expected dt_fk 硬编码**
-   - `include/leg_odometry/update/UpdaterZUPT.h:74` 写死 `dt_fk = 0.005`
-   - 实机 joint_states 不一定刚好 200Hz，jitter 直接进 R*dFK/dt
-   - 修法：传 `s.last_dt` 或测一次 joint_states 间隔
-
-5. **State::initialize 的 b_a 表达式不干净**
-   - `include/leg_odometry/state/State.h:117` `b_a = accel - R.transpose() * Eigen::Vector3d(0, 0, 9.81)`
-   - 因为 R 是从 `g_body = -accel.normalized() * 9.81` 反解的，当 |accel|≈9.81 时这表达式≈0
-   - 但 |accel| 偏离 9.81（IMU 标定误差）时会被初始化成非零值，又因为 sigma_ba=0 永久锁住
-   - 修法：直接 `b_a.setZero()`
+2. ~~leg_odom_node.cpp init bug~~ **【2026-04-15 已修】** 未静止时清空 sum/buf/count 重来
+3. ~~smoother bias_walk 写死~~ **【2026-04-15 已修】** 新增 `smoother_accel_bias_walk` / `smoother_gyro_bias_walk` 参数
+4. ~~UpdaterZUPT dt_fk 硬编码~~ **【2026-04-15 已修】** 改用 `s.last_dt`（fallback 0.005）
+5. ~~State::initialize b_a 表达式~~ **【2026-04-15 已修】** 改为 `b_a.setZero()`
 
 6. **GTSAMSmoother 每次重建整张图**
    - `include/leg_odometry/smoother/GTSAMSmoother.h:78-79` 每次 optimize 从零做 LM

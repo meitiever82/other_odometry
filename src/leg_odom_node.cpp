@@ -48,7 +48,9 @@ class LegOdomNode : public rclcpp::Node {
     declare_parameter("flat_z_noise", 0.001);
     declare_parameter("flat_vz_noise", 0.001);
 
-    declare_parameter("effort_threshold", 5.0);
+    declare_parameter("effort_threshold", 5.0);        // 向后兼容：左右共享时用
+    declare_parameter("effort_threshold_left", -1.0);   // <0 表示未设置，回退到 effort_threshold
+    declare_parameter("effort_threshold_right", -1.0);  // B1 右腿 bias 场景建议 12.0
     declare_parameter("effort_hysteresis", 1.0);
     declare_parameter("effort_joint_left", "LJPITCH");
     declare_parameter("effort_joint_right", "RJPITCH");
@@ -59,6 +61,8 @@ class LegOdomNode : public rclcpp::Node {
     declare_parameter("smoother_interval", 20);
     declare_parameter("smoother_kf_interval", 10);
     declare_parameter("smoother_alpha", 0.05);
+    declare_parameter("smoother_accel_bias_walk", 0.005);
+    declare_parameter("smoother_gyro_bias_walk", 0.002);
 
     // Load parameters
     noise_.sigma_a = get_parameter("accel_noise").as_double();
@@ -73,6 +77,12 @@ class LegOdomNode : public rclcpp::Node {
     noise_.sigma_flat_vz = get_parameter("flat_vz_noise").as_double();
 
     effort_threshold_ = get_parameter("effort_threshold").as_double();
+    double th_l = get_parameter("effort_threshold_left").as_double();
+    double th_r = get_parameter("effort_threshold_right").as_double();
+    if (th_l < 0) th_l = effort_threshold_;
+    if (th_r < 0) th_r = effort_threshold_;
+    effort_threshold_left_  = th_l;
+    effort_threshold_right_ = th_r;
     effort_hysteresis_ = get_parameter("effort_hysteresis").as_double();
     effort_joint_left_ = get_parameter("effort_joint_left").as_string();
     effort_joint_right_ = get_parameter("effort_joint_right").as_string();
@@ -94,17 +104,22 @@ class LegOdomNode : public rclcpp::Node {
       // TODO: load from robot_description string parameter
     }
 
-    // Init contact detector
-    contact_det_ = std::make_unique<ContactDetector>(effort_threshold_, effort_hysteresis_);
+    // Init contact detector (左右独立阈值，补偿 B1 右腿 torque bias)
+    contact_det_ = std::make_unique<ContactDetector>(
+        effort_threshold_left_, effort_threshold_right_, effort_hysteresis_);
+    RCLCPP_INFO(get_logger(), "ContactDetector thresholds: L=%.2f R=%.2f hys=%.2f",
+                effort_threshold_left_, effort_threshold_right_, effort_hysteresis_);
 
     // Init joint mapping
     joint_mapping_ = default_joint_mapping();
 
     // Init smoother
     if (smoother_enabled_) {
+      double sm_ba = get_parameter("smoother_accel_bias_walk").as_double();
+      double sm_bg = get_parameter("smoother_gyro_bias_walk").as_double();
       smoother_ = std::make_unique<GTSAMSmoother>(
           noise_.sigma_fk, noise_.sigma_contact, noise_.sigma_swing,
-          0.005, 0.002, noise_.sigma_flat_z);
+          sm_ba, sm_bg, noise_.sigma_flat_z, noise_.sigma_zupt);
       smoother_->window_size_ = get_parameter("smoother_window").as_int();
       smoother_->opt_interval_ = get_parameter("smoother_interval").as_int();
     }
@@ -164,7 +179,11 @@ class LegOdomNode : public rclcpp::Node {
         for (auto v : init_gyro_buf_) { sum += v; sum2 += v * v; }
         double gyro_std = std::sqrt(sum2 / n - (sum / n) * (sum / n));
         if (gyro_std > 0.05) {
-          return;  // 还在动，继续等
+          // 还在动，清空缓冲重来，避免 init_gyro_buf_ 无限增长和被早期运动污染
+          init_accel_sum_.setZero();
+          init_gyro_buf_.clear();
+          init_count_ = 0;
+          return;
         }
         Eigen::Vector3d avg = init_accel_sum_ / init_count_;
         auto fl = kin_.fk_left(latest_joints_);
@@ -205,7 +224,7 @@ class LegOdomNode : public rclcpp::Node {
       auto fl = kin_.fk_left(latest_joints_);
       auto fr = kin_.fk_right(latest_joints_);
 
-      UpdaterFK::update(state_, noise_, fl, fr);
+      UpdaterFK::update(state_, noise_, fl, fr, cl, cr);
       UpdaterZUPT::update(state_, noise_, fl, fr, cl, cr);
       UpdaterFlatZ::update(state_, noise_);
 
@@ -227,6 +246,7 @@ class LegOdomNode : public rclcpp::Node {
           kf.fk_right = fr;
           kf.contact_left = cl;
           kf.contact_right = cr;
+          kf.gyro_body = gyro - state_.b_g;
           smoother_->add_keyframe(kf);
 
           current_bias_ = bias;
@@ -294,7 +314,7 @@ class LegOdomNode : public rclcpp::Node {
   double last_imu_time_ = -1;
 
   // Contact
-  double effort_threshold_, effort_hysteresis_;
+  double effort_threshold_, effort_threshold_left_, effort_threshold_right_, effort_hysteresis_;
   std::string effort_joint_left_, effort_joint_right_;
 
   // Smoother

@@ -73,7 +73,9 @@ def main():
     accum_gyro_z = 0.0
 
     # storage
+    t_abs_list = []
     t_list, pos_list, yaw_list, speed_list, contact_list = [], [], [], [], []
+    diag_list = []   # per-step (vxy, vL, vR, cl, cr, last_gz)
     latest_q, latest_qd, latest_eff = {}, {}, {}
     last_gyro_z = 0.0
     n_fk = 0
@@ -154,14 +156,38 @@ def main():
         t_list.append(t_abs); pos_list.append(pos.copy()); yaw_list.append(yaw)
         speed_list.append(np.linalg.norm(v_world_xy))
         contact_list.append((int(cl), int(cr)))
+        diag_list.append((v_world_xy[0], v_world_xy[1],
+                          vL_body[0], vL_body[1], vR_body[0], vR_body[1],
+                          int(cl), int(cr), last_gyro_z))
         n_fk += 1
 
-    t = np.array(t_list); t -= t[0]
+    t_abs_arr = np.array(t_list)
+    t = t_abs_arr - t_abs_arr[0]
     P = np.array(pos_list)
+    yaws = np.array(yaw_list)
     print(f'\nFK-only odom done.  {n_fk} updates.')
     est_path = float(np.sum(np.linalg.norm(np.diff(P[:, :2], axis=0), axis=1)))
     loop_err = float(np.linalg.norm(P[-1, :2] - P[0, :2]))
     print(f'est_path = {est_path:.2f} m   loop_err = {loop_err:.2f} m')
+
+    # Dump absolute-time position trace CSV (for C++ / other comparisons)
+    csv_out = os.path.join(out_dir, 'fk_only_py.csv')
+    with open(csv_out, 'w') as f:
+        f.write('t_abs,x,y,z,yaw\n')
+        for i in range(len(t_abs_arr)):
+            f.write(f'{t_abs_arr[i]:.6f},{P[i,0]:.6f},{P[i,1]:.6f},{P[i,2]:.6f},{yaws[i]:.6f}\n')
+    print(f'wrote {csv_out}')
+
+    # Diagnostic CSV: per-step vxy, vL, vR, cl, cr, last_gz — for C++ parity check
+    diag_out = os.path.join(out_dir, 'fk_only_py_diag.csv')
+    with open(diag_out, 'w') as f:
+        f.write('t_abs,x,y,yaw,vxy_x,vxy_y,vL_x,vL_y,vR_x,vR_y,cl,cr,last_gz\n')
+        for i in range(len(t_abs_arr)):
+            d = diag_list[i]
+            f.write(f'{t_abs_arr[i]:.6f},{P[i,0]:.6f},{P[i,1]:.6f},{yaws[i]:.6f},'
+                    f'{d[0]:.6f},{d[1]:.6f},{d[2]:.6f},{d[3]:.6f},{d[4]:.6f},{d[5]:.6f},'
+                    f'{d[6]},{d[7]},{d[8]:.6f}\n')
+    print(f'wrote {diag_out}')
 
     # load ref
     ref_path = os.path.join(bag_dir, 'traj_imu.txt')

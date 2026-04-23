@@ -90,7 +90,8 @@ int main(int argc, char** argv) {
       noise.sigma_fk, noise.sigma_contact, noise.sigma_swing,
       0.005,  // smoother accel bias walk
       0.002,  // smoother gyro bias walk
-      noise.sigma_flat_z);
+      noise.sigma_flat_z,
+      noise.sigma_zupt);
   smoother.window_size_ = 60;
   smoother.opt_interval_ = 20;
 
@@ -129,7 +130,8 @@ int main(int argc, char** argv) {
                         s.contact_left, s.contact_right);
 
     // === ESKF updates ===
-    UpdaterFK::update(state, noise, s.fk_left, s.fk_right);
+    UpdaterFK::update(state, noise, s.fk_left, s.fk_right,
+                      s.contact_left, s.contact_right);
     UpdaterZUPT::update(state, noise, s.fk_left, s.fk_right,
                         s.contact_left, s.contact_right);
     UpdaterFlatZ::update(state, noise);
@@ -160,6 +162,7 @@ int main(int argc, char** argv) {
       kf.fk_right = s.fk_right;
       kf.contact_left = s.contact_left;
       kf.contact_right = s.contact_right;
+      kf.gyro_body = s.gyro - state.b_g;
 
       smoother.add_keyframe(kf);
 

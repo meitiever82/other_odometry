@@ -35,16 +35,19 @@ struct KeyframeData {
   std::shared_ptr<gtsam::PreintegratedImuMeasurements> pim;
   Eigen::Vector3d fk_left, fk_right;
   bool contact_left, contact_right;
+  Eigen::Vector3d gyro_body = Eigen::Vector3d::Zero();  // bias-corrected body-frame omega at keyframe
 };
 
 class GTSAMSmoother {
  public:
   GTSAMSmoother(double sigma_fk, double sigma_contact, double sigma_swing,
                 double sigma_ba_walk, double sigma_bg_walk,
-                double sigma_flat_z, double gravity_mag = 9.81)
+                double sigma_flat_z, double sigma_zupt = 0.05,
+                double gravity_mag = 9.81)
       : sigma_fk_(sigma_fk), sigma_contact_(sigma_contact),
         sigma_swing_(sigma_swing), sigma_ba_(sigma_ba_walk),
-        sigma_bg_(sigma_bg_walk), sigma_flat_z_(sigma_flat_z) {
+        sigma_bg_(sigma_bg_walk), sigma_flat_z_(sigma_flat_z),
+        sigma_zupt_(sigma_zupt) {
     auto imu_params = gtsam::PreintegrationParams::MakeSharedD(gravity_mag);
     imu_params->setAccelerometerCovariance(Eigen::Matrix3d::Identity() * 0.01);
     imu_params->setGyroscopeCovariance(Eigen::Matrix3d::Identity() * 0.0001);
@@ -142,7 +145,10 @@ class GTSAMSmoother {
       if (sigma_flat_z_ > 0) {
         graph.emplace_shared<FlatZPositionFactor>(Xk(j),
             gtsam::noiseModel::Isotropic::Sigma(1, sigma_flat_z_));
+        graph.emplace_shared<FlatZVelocityFactor>(Vk(j),
+            gtsam::noiseModel::Isotropic::Sigma(1, sigma_zupt_));
       }
+
 
       // Initial values
       Eigen::Matrix3d Rj = kf.pose.rotation().matrix();
@@ -179,6 +185,7 @@ class GTSAMSmoother {
 
   double sigma_fk_, sigma_contact_, sigma_swing_;
   double sigma_ba_, sigma_bg_, sigma_flat_z_;
+  double sigma_zupt_;
   std::shared_ptr<gtsam::PreintegrationParams> imu_params_;
 };
 

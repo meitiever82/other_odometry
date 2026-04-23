@@ -37,6 +37,34 @@ ament_target_dependencies(leg_odom_node
   kdl_parser urdf
 )
 
+# === Simple translation-only node (IMU for R, leg FK for p) ===
+add_executable(simple_leg_odom_node src/simple_leg_odom_node.cpp)
+target_include_directories(simple_leg_odom_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${orocos_kdl_INCLUDE_DIRS}
+)
+target_link_libraries(simple_leg_odom_node
+  ${orocos_kdl_LIBRARIES}
+)
+ament_target_dependencies(simple_leg_odom_node
+  rclcpp sensor_msgs nav_msgs geometry_msgs tf2_ros builtin_interfaces
+  kdl_parser urdf
+)
+
+# === Stage 1: FK-only node (gyro yaw + J·q̇ velocity, no Kalman) ===
+add_executable(fk_only_node src/fk_only_node.cpp)
+target_include_directories(fk_only_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${orocos_kdl_INCLUDE_DIRS}
+)
+target_link_libraries(fk_only_node
+  ${orocos_kdl_LIBRARIES}
+)
+ament_target_dependencies(fk_only_node
+  rclcpp sensor_msgs nav_msgs geometry_msgs tf2_ros builtin_interfaces
+  kdl_parser urdf
+)
+
 # === Offline evaluation (CSV, no ROS2 deps at runtime) ===
 add_executable(test_leg_odom src/test_leg_odom.cpp)
 target_include_directories(test_leg_odom PRIVATE
@@ -59,7 +87,7 @@ ament_target_dependencies(test_kinematics
 )
 
 # Install
-install(TARGETS leg_odom_node test_leg_odom test_kinematics
+install(TARGETS leg_odom_node simple_leg_odom_node fk_only_node test_leg_odom test_kinematics
   DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY include/
