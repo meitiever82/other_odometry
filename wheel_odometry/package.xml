@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wheel_odometry</name>
+  <version>0.1.0</version>
+  <description>
+    Four-wheel independent steering (swerve) odometry for ground robots.
+    No Kalman filter; body velocity comes from a least-squares fit of the four wheels'
+    contact-point velocities, body orientation from gyro + Mahony tilt (yaw rate
+    optionally taken from the LS solution to bypass gyro yaw drift).
+    Sibling to leg_odometry (same FK-only architecture, kinematics module swapped).
+  </description>
+  <maintainer email="meitiever@gmail.com">steve</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>eigen</depend>
+  <depend>navigation_interface</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
