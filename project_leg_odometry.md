@@ -1,18 +1,23 @@
 ---
-name: leg_odometry 项目状态与未修复issue清单
-description: CASBot02 腿式里程计 (C++ ESKF+GTSAM Hybrid)：未修复 issue、实机测试结果、sim-to-real 假设、构建/工具链注意事项
+name: leg_odometry 项目状态与历史 issue 清单
+description: CASBot02 腿式里程计当前方案 = FK-only (doc/fk_only_odometry.md)。本文件只保留历史 ESKF+GTSAM Hybrid 方案的 issue/工具链笔记
 type: project
 ---
 
-`src/leg_odometry/` 是 CASBot02 人形机器人腿式里程计，C++ ESKF 200Hz 前端 + GTSAM 滑窗后端。**架构、精度（sim 9 场景）、参数全部在 `src/leg_odometry/doc/progress_report.md`，需要时直接读这个文件，不要在 memory 里复述。**（历史上曾有 `CLAUDE.md`，已移除；不要再引用。）
+`src/leg_odometry/` 当前方案是 **FK-only**（无 Kalman，9 维 state，gyro 给姿态 + FK 给身体速度）。**架构、精度、参数读 `src/leg_odometry/doc/fk_only_odometry.md`**，节点 `src/fk_only_node.cpp`，launch `launch/fk_only_node.launch.py`，配置 `config/fk_only_params.yaml`。
 
-**Why:** 项目自带文档已经覆盖架构和数据，memory 只补不在文档里的东西。
+旧方案 ESKF+GTSAM Hybrid（`doc/progress_report.md`、`src/leg_odom_node.cpp`、`src/leg_odom_hybrid.cpp`、`config/ekf_params.yaml`）保留在 tree 里作为对比基线，**已不是主线**。本文件下面的 issue/工具链注释都是针对旧方案的。
 
-**How to apply:** 用户问 leg_odometry 相关问题时，先 read `doc/progress_report.md` 获取最新状态；如需代码层 issue 列表，看本 memory 下半部分。
+**Why:** 2026-04-28 用户明确指出 fk_only_odometry.md 才是当前在用的方案；FK-only 在 bag 16_12_13 上 path ratio 1.005，旧 Hybrid 同条 bag 是 48.7% drift。
+
+**How to apply:** 用户问 leg_odometry 相关问题时，先 read `doc/fk_only_odometry.md`。如果是 GTSAM 构建报错或老 ESKF 代码层 issue 才读本文件下半部分。
 
 ---
 
-## 实机测试结果（point-in-time, 2026-04-08）
+## 实机测试结果（point-in-time, 2026-04-08，**旧方案 ESKF+GTSAM Hybrid**）
+
+> ⚠️ FK-only 在同样 bag 上结果完全不同（path ratio 1.005，详见 `doc/fk_only_odometry.md`）。下面的数字仅作为弃用旧方案的依据保留。
+
 
 第一次跑真实 bag (`rosbag2_2026_04_07-16_12_13`, 103 办公室, 起终点应重合, 334s)：
 

@@ -1,116 +1,115 @@
 # CASBot02 Leg Odometry
 
-ESKF + GTSAM Hybrid 腿式里程计，用于 CASBot02 人形机器人。
+**FK-only** 腿式里程计，用于 CASBot02 人形机器人。无 Kalman 滤波，9 维 state，单文件 ~380 行。
+
+> 完整方案/推导/实测/参数详见 [`doc/fk_only_odometry.md`](doc/fk_only_odometry.md)。
 
 ## 架构
 
 ```
-/imu (200Hz) ──► ESKF 前端 (C++)          ──► /leg_odometry
-/joint_states ──►  ├── IMU 递推                (Odometry, 200Hz)
-                   ├── FK 位置观测
-                   ├── ZUPT 速度约束（分轴噪声）
-                   ├── 步级速度估计
-                   ├── 静止检测（gyro 方差）
-                   ├── 平面 Z 约束
-                   └── 接触检测（effort + FK Z 辅助）
-                        │
-                   ┌────▼──────────┐
-                   │ GTSAM Smoother│ ← 每 20 关键帧一次
-                   │ (LM 滑窗优化) │ → gyro bias 校正 (alpha=0.05)
-                   └───────────────┘
+IMU gyro ────► R (gyro 积分) ←── accel (Mahony 拉 tilt)
+                │
+joint q,q̇ ────► FK: v_foot_body = J(q)·q̇
+                │
+joint effort ─► ContactDetector → cl, cr
+                │
+                ▼
+         v_world = -R · v_foot_body  (按 cl, cr 选脚)
+                │
+                ▼
+         p ← p + v · dt   (+ FlatZ 钳 z)
 ```
 
-## 精度
+核心节点：[`src/fk_only_node.cpp`](src/fk_only_node.cpp)，每 `/joint_states` 消息跑一次 `joint_cb`（200 Hz）。
 
-### 仿真数据 (9 场景)
+## State (9 维)
 
-| 场景 | 路径 | XY 漂移 | Z 误差 |
-|------|------|---------|--------|
-| slope_up_down | 12m | **2.2%** | 32cm |
-| turn_in_place | 1.7m | **1.8%** | 1cm |
-| straight_medium (0.5m/s) | 15m | **1.8%** (Py) / **5.0%** (C++) | 4cm |
-| s_curve | 26m | **7.3%** | 4cm |
-| straight_fast (0.8m/s) | 20m | **13.9%** | 5cm |
-| straight_slow (0.3m/s) | 9m | **17.4%** | 3cm |
-| stop_and_go | 14m | 39.4% | 4cm |
-| long_walk (5min) | 142m | 42.6% | 3cm |
-| curve_walk (R=3m) | 16m | 51.2% | 4cm |
+| 变量 | 维度 | 来源 |
+|------|------|------|
+| p | 3 | v 积分 + FlatZ 钳 z |
+| R | SO(3) | gyro 积分 + accel Mahony tilt |
+| b_g | 3 | 启动前 3s 静止段平均 |
 
-### 真实数据 (跑步机)
+无 v、无 b_a、无 foot pos。**R 的 yaw 只能 gyro 积分，无外部 heading 必漂**——这是物理硬边界。
 
-| 指标 | 值 |
-|------|------|
-| 时长 | 236 秒 |
-| 路径 | 149 m |
-| XY 漂移 | **6.4%** |
-| Z 漂移 | < 1mm |
-| 输出频率 | 175 Hz |
+## 实测精度（真机 bag）
+
+| bag | 场景 | 时长 | path ratio | Kabsch RMSE | Z 漂 |
+|---|---|---|---|---|---|
+| 16_12_13 | 103 办公室 loop | 184s | **1.005** | 1.42m / 63m | 3.5cm |
+| 17_15_31 | B1 停车场 loop | 180s | **1.006** | 5.35m / 104m | 4.5cm |
+| 04_10-18:56:38 | 原地转圈 | 78s | 1.131 | 0.10m | 3.4cm |
+
+走环路径误差 < 1 % 跨 bag 一致。原地转圈 over-count 13 % 是已知局限（脚板 pivot，linear 补偿不能同时覆盖两种）。
 
 ## 编译
 
 ```bash
-mkdir build && cd build
-source /opt/ros/humble/setup.bash
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+cd ~/rtabmap_ws
+source /opt/ros/jazzy/setup.bash    # aarch64 平台
+colcon build --packages-select leg_odometry
 ```
 
-依赖: GTSAM 4.3, Eigen3, KDL, kdl_parser, ROS2 Humble
+依赖：Eigen3、KDL、kdl_parser、urdf、ROS2 Jazzy。**不需要 GTSAM**（FK-only 主线）。
+
+> 如果要构建 `leg_odom_node` / `leg_odom_hybrid`（历史 ESKF+GTSAM Hybrid 方案）才需要 GTSAM 4.3。
 
 ## 使用
 
-### ROS2 实时节点
-
-./build/leg_odom_node --ros-args \
-  -p urdf_path:=<path/to/casbot02.urdf>
-```
-
-- 订阅: `/imu` (Imu), `/joint_states` (JointState)
-- 发布: `/leg_odometry` (Odometry), TF `odom → base_link_leg_odom`
-
-### 离线评估
-
 ```bash
-# 生成仿真数据
-python3 scripts/generate_sim_data.py --scenario all
+# 走路场景
+ros2 launch leg_odometry fk_only_node.launch.py \
+    urdf_path:=/abs/path/to/casbot02_7dof_shell.urdf \
+    foot_roll_toe_offset:=0.20
 
-# 导出 CSV
-python3 scripts/bag_to_csv.py --scenario all
-
-# C++ 评估
-./build/leg_odom_hybrid data/sim/csv/straight_medium.csv output.csv
+# 原地转圈场景
+ros2 launch leg_odometry fk_only_node.launch.py \
+    urdf_path:=/abs/path/to/casbot02_7dof_shell.urdf \
+    foot_roll_toe_offset:=0.0
 ```
+
+- 订阅：`/imu` (`sensor_msgs/Imu`)、`/joint_states` (`sensor_msgs/JointState`)
+- 发布：`/leg_odometry` (`nav_msgs/Odometry`)、TF `odom → base_link_leg_odom`
+
+## 关键参数（`config/fk_only_params.yaml`）
+
+| 参数 | 默认 | 作用 |
+|---|---|---|
+| `bias_window_sec` | 3.0 | 启动静止段长度（估 gyro bias + 初始 R），开机前 3s 必须静止 |
+| `effort_threshold_{left,right}` | 5.0 | 接触检测阈值 (Nm) |
+| `tilt_kp` | 1.0 | Mahony 补偿增益 |
+| `tilt_accel_band` | 0.5 | accel 准静态门控 |
+| `flatz_enabled` | true | FlatZ 钳制开关（上下坡时关掉） |
+| `flatz_alpha` | 0.05 | p.z 向 0 收敛比例 |
+| **`foot_roll_toe_offset`** | 0.0 | heel-toe rolling 补偿，走路 0.20，转圈 0.0 |
+
+## 已知局限
+
+1. **Yaw 长漂**：物理硬边界，无外部 heading 治不了
+2. **原地转圈 path 过估 13 %**：foot_roll 补偿过补偿
+3. **假设开机前 3 s 静止**
+4. **不处理上下坡**：FlatZ 假设地面平
+5. **无下游 covariance**：要接 SLAM 融合时需要补
 
 ## 代码结构
 
 ```
-├── src/                           # ★ C++ 主代码
-│   ├── state/
-│   │   ├── State.h                # 21 维 ESKF 状态定义
-│   │   ├── Propagator.h           # IMU 递推
-│   │   ├── StateHelper.h          # Kalman 更新
-│   │   └── Kinematics.h           # KDL FK + Jacobian + 接触检测
-│   ├── update/
-│   │   ├── UpdaterFK.h            # FK 位置观测
-│   │   ├── UpdaterZUPT.h          # ZUPT(分轴) + 步级速度 + 静止检测
-│   │   └── UpdaterFlatZ.h         # 平面 Z 约束
-│   ├── smoother/
-│   │   ├── leg_factors.h          # GTSAM 自定义因子 (FK/FlatZ)
-│   │   └── GTSAMSmoother.h        # GTSAM LM 滑窗优化
-│   ├── leg_odom_hybrid.cpp        # 离线评估 (CSV 输入)
-│   ├── leg_odom_node.cpp          # ROS2 实时节点
-│   └── CMakeLists.txt
-│
-├── python/                        # Python 参考实现 (import via leg_odometry symlink)
-├── scripts/                       # 仿真生成 / 评估 / 数据转换
-├── config/                        # 参数配置 (YAML)
-├── doc/                           # 文档
-└── launch/                        # ROS2 launch 文件
+├── src/
+│   ├── fk_only_node.cpp         # ★ 当前主线节点
+│   ├── leg_odom_node.cpp        # 历史 ESKF+GTSAM Hybrid
+│   └── leg_odom_hybrid.cpp      # 历史离线评估
+├── include/leg_odometry/
+│   ├── so3_utils.h              # skew, exp_so3
+│   └── state/Kinematics.h       # LegKinematics, ContactDetector
+├── launch/fk_only_node.launch.py
+├── config/
+│   ├── fk_only_params.yaml      # ★ 当前主线参数
+│   ├── ekf_params.yaml          # 历史
+│   └── joint_mapping.yaml
+├── scripts/fk_only_odometry.py  # Python 离线参考实现
+└── doc/
+    ├── fk_only_odometry.md      # ★ 当前方案文档
+    └── progress_report.md       # 历史 ESKF+GTSAM Hybrid 报告
 ```
 
-## 参考文献
-
-- Bloesch et al. "State Estimation for Legged Robots", RSS 2013
-- Leg-KILO: Kinematic-Inertial-Lidar Odometry, RA-L 2024
-- Cerberus: Visual-Inertial-Leg Odometry, ICRA 2023
-- LVI-Q: LiDAR-Visual-Inertial-Kinematic Odometry, RA-L 2025
+Python 离线参考：`scripts/fk_only_odometry.py`（与 C++ 节点算法一致，做回归基准）。
